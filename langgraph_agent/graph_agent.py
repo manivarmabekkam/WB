@@ -12,15 +12,23 @@ class AgentState(TypedDict):
     query: str
     response: str
 
-@weave.op()
 class LangGraphAgent:
     """LangGraph-based agent with MCP tools"""
     
-    def __init__(self, use_mock: bool = True):
-        self.use_mock = use_mock
+    def __init__(self):
         self.mcp_tools = MCPToolManager()
-        if not use_mock:
+        self.use_mock = self._detect_llm_availability()
+        if not self.use_mock:
             self.client = openai.OpenAI()
+    
+    def _detect_llm_availability(self) -> bool:
+        """Detect if LLM is available, return True if should use mock"""
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()  # Ensure .env is loaded
+        
+        api_key = os.getenv("OPENAI_API_KEY")
+        return not bool(api_key and len(api_key.strip()) > 10)  # Use mock if no valid API key
     
     @weave.op()
     def analyze_query(self, state: AgentState) -> AgentState:
@@ -106,5 +114,6 @@ class LangGraphAgent:
             "tools_used": state["tools_used"],
             "tool_results": state["tool_results"],
             "processing_time": time.time() - start_time,
-            "framework": "langgraph-mcp"
+            "framework": "langgraph-mcp",
+            "mode": "mock" if self.use_mock else "llm"
         }

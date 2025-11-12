@@ -6,7 +6,6 @@ import time
 import random
 import os
 
-@weave.op()
 class MCPToolManager:
     """MCP Tool Manager with fallback to existing tools"""
     

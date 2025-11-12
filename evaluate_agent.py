@@ -232,36 +232,36 @@ def run_comprehensive_evaluation():
     
     # Create test dataset
     test_dataset = evaluator.create_test_dataset()
-    print(f"📊 Created test dataset with {len(test_dataset)} test cases")
+    print(f" Created test dataset with {len(test_dataset)} test cases")
     
     # Evaluate single agent
-    print("\n🤖 Evaluating Single Agent...")
+    print("\n Evaluating Single Agent...")
     single_agent_results = evaluator.evaluate_single_agent(test_dataset)
     
     # Evaluate multi-agent
-    print("\n🤖🤖 Evaluating Multi-Agent Workflow...")
+    print("\n Evaluating Multi-Agent Workflow...")
     multi_agent_results = evaluator.evaluate_multi_agent(test_dataset)
     
     # Display results
-    print("\n📈 Evaluation Results")
+    print("\n Evaluation Results")
     print("=" * 40)
     
-    print("\n🤖 Single Agent Performance:")
+    print("\n Single Agent Performance:")
     sa_summary = single_agent_results["summary"]
     print(f"  Average Quality Score: {sa_summary['avg_quality_score']:.3f}")
     print(f"  Average Tool Selection Score: {sa_summary['avg_tool_selection_score']:.3f}")
     print(f"  Average Processing Time: {sa_summary['avg_processing_time']:.2f}s")
     
-    print("\n🤖🤖 Multi-Agent Performance:")
+    print("\n Multi-Agent Performance:")
     ma_summary = multi_agent_results["summary"]
     print(f"  Average Quality Score: {ma_summary['avg_quality_score']:.3f}")
     print(f"  Average Processing Time: {ma_summary['avg_processing_time']:.2f}s")
     
-    print("\n📊 Category Performance (Single Agent):")
+    print("\n Category Performance (Single Agent):")
     for category, performance in single_agent_results["category_performance"].items():
         print(f"  {category}: {performance['avg_score']:.3f} ({performance['test_count']} tests)")
     
-    print("\n👥 Agent Usage (Multi-Agent):")
+    print("\n Agent Usage (Multi-Agent):")
     for agent, usage_count in multi_agent_results["agent_usage"].items():
         print(f"  {agent}: {usage_count} times")
     
@@ -273,4 +273,4 @@ def run_comprehensive_evaluation():
 
 if __name__ == "__main__":
     results = run_comprehensive_evaluation()
-    print("\n✅ Evaluation completed! Check your W&B dashboard for detailed traces.")
+    print("\n Evaluation completed! Check your W&B dashboard for detailed traces.")
