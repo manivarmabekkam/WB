@@ -86,8 +86,18 @@ def main():
             else:
                 st.warning("⚠️ Add OPENPIPE_API_KEY to .env")
             
+            # Show current training data count
+            if hasattr(agent, 'training_data') and agent.training_data:
+                single_count = len([d for d in agent.training_data if d.get('metadata', {}).get('mode') != 'multi_agent'])
+                multi_count = len([d for d in agent.training_data if d.get('metadata', {}).get('mode') == 'multi_agent'])
+                st.metric("Training Samples", f"{len(agent.training_data)}", f"Single: {single_count}, Multi: {multi_count}")
+            
             if st.button("📊 Export Training Data"):
                 if hasattr(agent, 'training_data') and agent.training_data:
+                    # Count single vs multi-agent samples
+                    single_count = len([d for d in agent.training_data if d.get('metadata', {}).get('mode') != 'multi_agent'])
+                    multi_count = len([d for d in agent.training_data if d.get('metadata', {}).get('mode') == 'multi_agent'])
+                    
                     data = json.dumps(agent.training_data, indent=2)
                     st.download_button(
                         "Download Training Data",
@@ -96,6 +106,7 @@ def main():
                         "application/json"
                     )
                     st.success(f"💾 {len(agent.training_data)} samples ready for export")
+                    st.info(f"📊 Single Agent: {single_count}, Multi-Agent: {multi_count}")
                 else:
                     st.info("No training data collected yet")
         
@@ -172,6 +183,22 @@ def main():
                         "tool_results": result.get("tool_results", {}),
                         "task_analysis": result["task_analysis"]
                     }
+                    
+                    # Collect training data for multi-agent if OpenPipe enabled
+                    if st.session_state.use_openpipe and hasattr(agent, 'training_data'):
+                        training_entry = {
+                            "messages": [
+                                {"role": "user", "content": prompt},
+                                {"role": "assistant", "content": response}
+                            ],
+                            "metadata": {
+                                "mode": "multi_agent",
+                                "processing_time": result["processing_time"],
+                                "agents_used": result["agents_used"],
+                                "tools_used": result.get("tools_used", [])
+                            }
+                        }
+                        agent.training_data.append(training_entry)
                 
                 end_time = time.time()
                 
@@ -236,6 +263,31 @@ def main():
             summary = dashboard.get_dashboard_summary()
             st.subheader("📊 Dashboard Summary")
             st.json(summary)
+        
+        # Evaluation button
+        st.header("🧪 Evaluation")
+        if st.button("▶️ Run Evaluation"):
+            with st.spinner("Running comprehensive evaluation..."):
+                try:
+                    from evaluate_agent import AgentEvaluationSuite
+                    evaluator = AgentEvaluationSuite()
+                    test_dataset = evaluator.create_test_dataset()
+                    
+                    # Run single agent evaluation
+                    single_results = evaluator.evaluate_single_agent(test_dataset)
+                    
+                    st.success("✅ Evaluation completed!")
+                    st.subheader("📊 Evaluation Results")
+                    st.json(single_results["summary"])
+                    
+                    # Category performance
+                    if "category_performance" in single_results:
+                        st.subheader("📈 Category Performance")
+                        for category, perf in single_results["category_performance"].items():
+                            st.metric(f"{category.title()}", f"{perf['avg_score']:.2f}", f"{perf['test_count']} tests")
+                    
+                except Exception as e:
+                    st.error(f"❌ Evaluation failed: {str(e)}")
     
     # Footer
     st.markdown("---")
@@ -259,6 +311,20 @@ def main():
                 )
     
     with col3:
+        if st.button("🧪 Quick Eval"):
+            with st.spinner("Running quick evaluation..."):
+                try:
+                    from evaluate_agent import AgentEvaluationSuite
+                    evaluator = AgentEvaluationSuite()
+                    test_cases = [
+                        {"query": "What's 5+5?", "expected_tools": ["calculator"], "category": "math", "difficulty": "easy"},
+                        {"query": "What time is it?", "expected_tools": ["time"], "category": "tool", "difficulty": "easy"}
+                    ]
+                    results = evaluator.evaluate_single_agent(test_cases)
+                    st.success(f"✅ Score: {results['summary']['avg_quality_score']:.2f}")
+                except:
+                    st.error("❌ Eval failed")
+        
         st.markdown("🔗 [View in W&B Dashboard](https://wandb.ai)")
 
 if __name__ == "__main__":

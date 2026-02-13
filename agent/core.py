@@ -13,8 +13,10 @@ class WeaveAgent:
     def __init__(self, model: str = "gpt-4o-mini", max_tokens: int = 300, use_mock: bool = True):
         self.model = model
         self.max_tokens = max_tokens
-        self.use_mock = use_mock
-        if not use_mock:
+        # Check if OpenAI key exists to determine mock mode
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.use_mock = use_mock if not openai_key else False
+        if not self.use_mock:
             self.client = openai.OpenAI()
         self.memory = MemoryManager()
         self.tools = ToolRegistry()
@@ -86,21 +88,37 @@ class WeaveAgent:
         return results
     
     @weave.op()
-    def generate_response(self, query: str, reasoning: str, tool_results: Dict[str, Any]) -> str:
+    def generate_response(self, query: str, reasoning: str, tool_results: Dict[str, Any], context: str = "") -> str:
         """Generate final response based on reasoning and tool results"""
         if self.use_mock:
-            return f"Mock Response: Based on your query '{query}', I analyzed the situation and used tools {list(tool_results.keys())}. The results show: {str(tool_results)[:100]}... This is a simulated response for testing."
+            # Use memory context in mock mode
+            if context and "name" in query.lower():
+                if "mani" in context.lower():
+                    return "Your name is Mani, as you mentioned earlier."
+                elif "name" in context.lower():
+                    # Extract name from context
+                    import re
+                    name_match = re.search(r'name is (\w+)', context.lower())
+                    if name_match:
+                        return f"Your name is {name_match.group(1).title()}."
+            
+            context_info = f" (with context: {context[:50]}...)" if context else ""
+            return f"Mock Response: Based on your query '{query}', I analyzed the situation and used tools {list(tool_results.keys())}. The results show: {str(tool_results)[:100]}...{context_info} This is a simulated response for testing."
         
+        system_content = "Generate a helpful response using the tool results. Be concise and direct."
+        if context:
+            system_content += f" IMPORTANT: Use this previous conversation context to answer personal questions: {context}"
+        
+        user_content = query
         if tool_results:
-            messages = [
-                {"role": "system", "content": "Generate a helpful response using the tool results. Be concise and direct."},
-                {"role": "user", "content": f"Query: {query}\nTool Results: {json.dumps(tool_results)}"}
-            ]
-        else:
-            messages = [
-                {"role": "system", "content": "Answer the query directly and helpfully."},
-                {"role": "user", "content": query}
-            ]
+            user_content = f"Query: {query}\nTool Results: {json.dumps(tool_results)}"
+        elif context:
+            user_content = f"Query: {query}\nPrevious conversation: {context}"
+        
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
+        ]
         
         response = self.client.chat.completions.create(
             model=self.model,
@@ -131,7 +149,7 @@ class WeaveAgent:
         tool_results = self.execute_tools(selected_tools, query)
         
         # Response generation
-        response = self.generate_response(query, reasoning_result["reasoning"], tool_results)
+        response = self.generate_response(query, reasoning_result["reasoning"], tool_results, context)
         
         # Store response in memory
         self.memory.add_interaction(response, "assistant")

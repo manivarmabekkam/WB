@@ -168,7 +168,7 @@ Example: {{"specialists_needed": ["research", "analysis"], "execution_order": ["
             }
     
     @weave.op()
-    def coordinate_specialists(self, query: str, specialist_assignments: Dict[str, Any]) -> Dict[str, Any]:
+    def coordinate_specialists(self, query: str, specialist_assignments: Dict[str, Any], memory_context: str = "") -> Dict[str, Any]:
         """Coordinate specialist agents"""
         results = {}
         execution_order = specialist_assignments.get("execution_order", [])
@@ -184,11 +184,11 @@ Example: {{"specialists_needed": ["research", "analysis"], "execution_order": ["
             specialist_name = execution_order[0]
             if specialist_name in self.specialists:
                 specialist = self.specialists[specialist_name]
-                result = specialist.specialized_process(query, None)
+                result = specialist.specialized_process(query, memory_context)
                 results[specialist_name] = result
             return results
         
-        context = None
+        context = memory_context
         for specialist_name in execution_order:
             if specialist_name in self.specialists:
                 specialist = self.specialists[specialist_name]
@@ -199,19 +199,24 @@ Example: {{"specialists_needed": ["research", "analysis"], "execution_order": ["
         return results
     
     @weave.op()
-    def synthesize_results(self, query: str, specialist_results: Dict[str, Any]) -> str:
+    def synthesize_results(self, query: str, specialist_results: Dict[str, Any], memory_context: str = "") -> str:
         """Synthesize results from multiple specialists"""
         if self.use_mock:
             specialists_used = ", ".join(specialist_results.keys())
-            return f"Mock synthesis: Combined insights from {specialists_used} specialists for query '{query[:50]}...'. Final recommendation based on multi-agent analysis."
+            context_info = f" (with context: {memory_context[:50]}...)" if memory_context else ""
+            return f"Mock synthesis: Combined insights from {specialists_used} specialists for query '{query[:50]}...'. Final recommendation based on multi-agent analysis.{context_info}"
         
         results_summary = "\n".join([
             f"{name}: {result['response']}" 
             for name, result in specialist_results.items()
         ])
         
+        system_content = "Synthesize specialist responses into a coherent answer. Use ONLY the information provided by specialists. Do NOT add information from your training data."
+        if memory_context:
+            system_content += f" Previous conversation context: {memory_context}"
+        
         messages = [
-            {"role": "system", "content": "Synthesize specialist responses into a coherent answer. Use ONLY the information provided by specialists. Do NOT add information from your training data."},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": f"Query: {query}\n\nResponses:\n{results_summary}"}
         ]
         
@@ -231,6 +236,8 @@ class MultiAgentWorkflow:
         self.use_mock = use_mock
         self.coordinator = CoordinatorAgent(use_mock=use_mock)
         self._setup_specialists()
+        from agent.memory import MemoryManager
+        self.memory = MemoryManager()
     
     def _setup_specialists(self):
         """Setup specialist agents"""
@@ -248,6 +255,11 @@ class MultiAgentWorkflow:
     def run(self, query: str) -> Dict[str, Any]:
         """Execute multi-agent workflow"""
         start_time = time.time()
+        
+        # Store in memory and get context
+        self.memory.add_interaction(query, "user")
+        context = self.memory.get_relevant_context(query)
+        
         query_lower = query.lower()
         
         # Fast path: detect tool-only queries and skip task analysis
@@ -266,6 +278,9 @@ class MultiAgentWorkflow:
             tool_results = result.get('tool_results', {})
             final_response = f"Results: {json.dumps(tool_results, indent=2)}" if tool_results else result['response']
             
+            # Store response in memory
+            self.memory.add_interaction(final_response, "assistant")
+            
             return {
                 "query": query,
                 "task_analysis": {"specialists_needed": ["research"], "execution_order": ["research"]},
@@ -274,13 +289,14 @@ class MultiAgentWorkflow:
                 "processing_time": time.time() - start_time,
                 "agents_used": ["research"],
                 "tools_used": tools_used,
-                "tool_results": tool_results
+                "tool_results": tool_results,
+                "context_used": context
             }
         
         # Full workflow for complex queries
         task_analysis = self.coordinator.analyze_task(query)
-        specialist_results = self.coordinator.coordinate_specialists(query, task_analysis)
-        final_response = self.coordinator.synthesize_results(query, specialist_results)
+        specialist_results = self.coordinator.coordinate_specialists(query, task_analysis, context)
+        final_response = self.coordinator.synthesize_results(query, specialist_results, context)
         
         tools_used = []
         tool_results = {}
@@ -291,6 +307,9 @@ class MultiAgentWorkflow:
                         tools_used.append(tool_name)
                     tool_results[f"{agent_name}_{tool_name}"] = tool_result
         
+        # Store response in memory
+        self.memory.add_interaction(final_response, "assistant")
+        
         return {
             "query": query,
             "task_analysis": task_analysis,
@@ -299,7 +318,8 @@ class MultiAgentWorkflow:
             "processing_time": time.time() - start_time,
             "agents_used": list(specialist_results.keys()),
             "tools_used": tools_used,
-            "tool_results": tool_results
+            "tool_results": tool_results,
+            "context_used": context
         }
     
     def execute_workflow(self, query: str) -> Dict[str, Any]:

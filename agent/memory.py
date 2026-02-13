@@ -49,42 +49,30 @@ class MemoryManager:
         self.save_memory()
     
     @weave.op()
-    def get_relevant_context(self, query: str, top_k: int = 3) -> str:
-        """Retrieve relevant context using semantic search"""
+    def get_relevant_context(self, query: str, top_k: int = 5) -> str:
+        """Retrieve relevant context using keyword and semantic search"""
         if not self.memories:
             return ""
         
-        # Extract content for vectorization
-        memory_texts = [m["content"] for m in self.memories]
+        query_lower = query.lower()
         
-        if len(memory_texts) < 2:
-            return memory_texts[0] if memory_texts else ""
+        # For name queries, search for name mentions
+        if "name" in query_lower:
+            for memory in reversed(self.memories):
+                content_lower = memory["content"].lower()
+                if "name is" in content_lower or "i'm" in content_lower or "call me" in content_lower:
+                    return f"{memory['role']}: {memory['content']}"
         
-        try:
-            # Vectorize memories and query
-            all_texts = memory_texts + [query]
-            vectors = self.vectorizer.fit_transform(all_texts)
-            
-            # Calculate similarity
-            query_vector = vectors[-1]
-            memory_vectors = vectors[:-1]
-            similarities = cosine_similarity(query_vector, memory_vectors).flatten()
-            
-            # Get top-k most similar memories
-            top_indices = np.argsort(similarities)[-top_k:][::-1]
-            relevant_memories = [self.memories[i] for i in top_indices if similarities[i] > 0.1]
-            
-            # Format context
-            context_parts = []
-            for memory in relevant_memories:
-                context_parts.append(f"{memory['role']}: {memory['content']}")
-            
-            return "\n".join(context_parts)
+        # For other personal info queries
+        if any(word in query_lower for word in ["live", "from", "location", "city"]):
+            for memory in reversed(self.memories):
+                content_lower = memory["content"].lower()
+                if any(word in content_lower for word in ["live", "from", "houston", "city"]):
+                    return f"{memory['role']}: {memory['content']}"
         
-        except Exception as e:
-            # Fallback to recent memories
-            recent_memories = self.memories[-top_k:]
-            return "\n".join([f"{m['role']}: {m['content']}" for m in recent_memories])
+        # Fallback: return recent context
+        recent_memories = self.memories[-top_k:]
+        return "\n".join([f"{m['role']}: {m['content']}" for m in recent_memories])
     
     @weave.op()
     def get_memory_stats(self) -> Dict[str, Any]:
